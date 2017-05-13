@@ -195,9 +195,17 @@ namespace SDL2
 
 		#region SDL_platform.h
 
-		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
+		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "SDL_GetPlatform")]
 		[return : MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(LPUtf8StrMarshaler), MarshalCookie = LPUtf8StrMarshaler.LeaveAllocated)]
-		public static extern string SDL_GetPlatform();
+		public static extern string SDL_GetPlatformNative();
+
+		public static string SDL_GetPlatform()
+		{
+			var platform = SDL_GetPlatformNative();
+			if (platform.Equals("Android"))
+				platform = "Linux";
+			return platform;
+		}
 
 		#endregion
 
