@@ -45,6 +45,11 @@ namespace SDL2
 
 		internal static byte[] UTF8_ToNative(string s)
 		{
+			if (s == null)
+			{
+				return null;
+			}
+
 			// Add a null terminator. That's kind of it... :/
 			return System.Text.Encoding.UTF8.GetBytes(s + '\0');
 		}
@@ -63,6 +68,19 @@ namespace SDL2
 				ptr++;
 			}
 
+			/* TODO: This #ifdef is only here because the equivalent
+			 * .NET 2.0 constructor appears to be less efficient?
+			 * Here's the pretty version, maybe steal this instead:
+			 *
+			string result = new string(
+				(sbyte*) s, // Also, why sbyte???
+				0,
+				(int) (ptr - (byte*) s),
+				System.Text.Encoding.UTF8
+			);
+			 * See the CoreCLR source for more info.
+			 * -flibit
+			 */
 #if NETSTANDARD2_0
 			/* Modern C# lets you just send the byte*, nice! */
 			string result = System.Text.Encoding.UTF8.GetString(
@@ -137,9 +155,9 @@ namespace SDL2
 		 * functions marked with the phrase "THIS IS A PUBLIC RWops FUNCTION!"
 		 */
 
-		/* IntPtr refers to an SDL_RWops* */
+		/* mem refers to a void*, IntPtr to an SDL_RWops* */
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern IntPtr SDL_RWFromMem(byte[] mem, int size);
+		public static extern IntPtr SDL_RWFromMem(IntPtr mem, int size);
 
 		#endregion
 
@@ -264,6 +282,14 @@ namespace SDL2
 			"SDL_ACCELEROMETER_AS_JOYSTICK";
 		public const string SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES =
 			"SDL_VIDEO_MAC_FULLSCREEN_SPACES";
+
+		/* Only available in SDL 2.0.3 or higher */
+		public const string SDL_HINT_WINRT_PRIVACY_POLICY_URL =
+			"SDL_WINRT_PRIVACY_POLICY_URL";
+		public const string SDL_HINT_WINRT_PRIVACY_POLICY_LABEL =
+			"SDL_WINRT_PRIVACY_POLICY_LABEL";
+		public const string SDL_HINT_WINRT_HANDLE_BACK_BUTTON =
+			"SDL_WINRT_HANDLE_BACK_BUTTON";
 
 		/* Only available in SDL 2.0.4 or higher */
 		public const string SDL_HINT_NO_SIGNAL_HANDLERS =
@@ -658,10 +684,31 @@ namespace SDL2
 
 		/* userdata refers to a void* */
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern void SDL_LogGetOutputFunction(
-			out SDL_LogOutputFunction callback,
+		private static extern void SDL_LogGetOutputFunction(
+			out IntPtr callback,
 			out IntPtr userdata
 		);
+		public static void SDL_LogGetOutputFunction(
+			out SDL_LogOutputFunction callback,
+			out IntPtr userdata
+		) {
+			IntPtr result = IntPtr.Zero;
+			SDL_LogGetOutputFunction(
+				out result,
+				out userdata
+			);
+			if (result != IntPtr.Zero)
+			{
+				callback = (SDL_LogOutputFunction) Marshal.GetDelegateForFunctionPointer(
+					result,
+					typeof(SDL_LogOutputFunction)
+				);
+			}
+			else
+			{
+				callback = null;
+			}
+		}
 
 		/* userdata refers to a void* */
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
@@ -1045,6 +1092,7 @@ namespace SDL2
 
 		/* win refers to an SDL_Window*, area to a cosnt SDL_Point*, data to a void* */
 		/* Only available in 2.0.4 */
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 		public delegate SDL_HitTestResult SDL_HitTest(IntPtr win, IntPtr area, IntPtr data);
 
 		/* IntPtr refers to an SDL_Window* */
@@ -1352,6 +1400,10 @@ namespace SDL2
 				UTF8_ToNative(proc)
 			);
 		}
+
+		/* IntPtr refers to a function pointer, proc to a const char* */
+		[DllImport(nativeLibName, EntryPoint = "SDL_GL_GetProcAddress", CallingConvention = CallingConvention.Cdecl)]
+		public static extern IntPtr SDL_GL_GetProcAddress(IntPtr proc);
 
 		[DllImport(nativeLibName, EntryPoint = "SDL_GL_ExtensionSupported", CallingConvention = CallingConvention.Cdecl)]
 		private static extern SDL_bool INTERNAL_SDL_GL_ExtensionSupported(
@@ -2917,8 +2969,15 @@ namespace SDL2
 		}
 
 		/* Only available in 2.0.4 */
-		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern SDL_bool SDL_PointInRect(ref SDL_Point p, ref SDL_Rect r);
+		public static SDL_bool SDL_PointInRect(ref SDL_Point p, ref SDL_Rect r)
+		{
+			return (	(p.x >= r.x) &&
+					(p.x < (r.x + r.w)) &&
+					(p.y >= r.y) &&
+					(p.y < (r.y + r.h))	) ?
+				SDL_bool.SDL_TRUE :
+				SDL_bool.SDL_FALSE;
+		}
 
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
 		public static extern SDL_bool SDL_EnclosePoints(
@@ -2951,14 +3010,24 @@ namespace SDL2
 			ref int Y2
 		);
 
-		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern SDL_bool SDL_RectEmpty(ref SDL_Rect rect);
+		public static SDL_bool SDL_RectEmpty(ref SDL_Rect r)
+		{
+			return ((r.w <= 0) || (r.h <= 0)) ?
+				SDL_bool.SDL_TRUE :
+				SDL_bool.SDL_FALSE;
+		}
 
-		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern SDL_bool SDL_RectEquals(
-			ref SDL_Rect A,
-			ref SDL_Rect B
-		);
+		public static SDL_bool SDL_RectEquals(
+			ref SDL_Rect a,
+			ref SDL_Rect b
+		) {
+			return (	(a.x == b.x) &&
+					(a.y == b.y) &&
+					(a.w == b.w) &&
+					(a.h == b.h)	) ?
+				SDL_bool.SDL_TRUE :
+				SDL_bool.SDL_FALSE;
+		}
 
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
 		public static extern void SDL_UnionRect(
@@ -3512,7 +3581,7 @@ namespace SDL2
 		/* Only available in 2.0.4 or higher */
 		public enum SDL_MouseWheelDirection : uint
 		{
-			SDL_MOUSEHWEEL_NORMAL,
+			SDL_MOUSEWHEEL_NORMAL,
 			SDL_MOUSEWHEEL_FLIPPED
 		}
 
@@ -3754,6 +3823,22 @@ namespace SDL2
 						 */
 		}
 
+// Ignore private members used for padding in this struct
+#pragma warning disable 0169
+		/* Audio device event (event.adevice.*) */
+		[StructLayout(LayoutKind.Sequential)]
+		public struct SDL_AudioDeviceEvent
+		{
+			public UInt32 type;
+			public UInt32 timestamp;
+			public UInt32 which;
+			public byte iscapture;
+			private byte padding1;
+			private byte padding2;
+			private byte padding3;
+		}
+#pragma warning restore 0169
+
 		[StructLayout(LayoutKind.Sequential)]
 		public struct SDL_TouchFingerEvent
 		{
@@ -3873,6 +3958,8 @@ namespace SDL2
 			[FieldOffset(0)]
 			public SDL_ControllerDeviceEvent cdevice;
 			[FieldOffset(0)]
+			public SDL_AudioDeviceEvent adevice;
+			[FieldOffset(0)]
 			public SDL_QuitEvent quit;
 			[FieldOffset(0)]
 			public SDL_UserEvent user;
@@ -3961,10 +4048,29 @@ namespace SDL2
 
 		/* userdata refers to a void* */
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern SDL_bool SDL_GetEventFilter(
-			out SDL_EventFilter filter,
+		private static extern SDL_bool SDL_GetEventFilter(
+			out IntPtr filter,
 			out IntPtr userdata
 		);
+		public static SDL_bool SDL_GetEventFilter(
+			out SDL_EventFilter filter,
+			out IntPtr userdata
+		) {
+			IntPtr result = IntPtr.Zero;
+			SDL_bool retval = SDL_GetEventFilter(out result, out userdata);
+			if (result != IntPtr.Zero)
+			{
+				filter = (SDL_EventFilter) Marshal.GetDelegateForFunctionPointer(
+					result,
+					typeof(SDL_EventFilter)
+				);
+			}
+			else
+			{
+				filter = null;
+			}
+			return retval;
+		}
 
 		/* userdata refers to a void* */
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
@@ -5028,10 +5134,6 @@ namespace SDL2
 
 		/* joystick refers to an SDL_Joystick* */
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern int SDL_JoystickOpened(int device_index);
-
-		/* joystick refers to an SDL_Joystick* */
-		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
 		public static extern void SDL_JoystickUpdate();
 
 		/* joystick refers to an SDL_Joystick* */
@@ -5196,19 +5298,33 @@ namespace SDL2
 			public int hat_mask;
 		}
 
-		/* This struct has a union in it, hence the Explicit layout. */
+		// FIXME: I'd rather this somehow be private...
 		[StructLayout(LayoutKind.Explicit)]
+		public struct INTERNAL_GameControllerButtonBind_union
+		{
+			[FieldOffset(0)]
+			public int button;
+			[FieldOffset(0)]
+			public int axis;
+			[FieldOffset(0)]
+			public INTERNAL_GameControllerButtonBind_hat hat;
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
 		public struct SDL_GameControllerButtonBind
 		{
-			/* Note: enum size is 4 bytes. */
-			[FieldOffset(0)]
 			public SDL_GameControllerBindType bindType;
-			[FieldOffset(4)]
-			public int button;
-			[FieldOffset(4)]
-			public int axis;
-			[FieldOffset(4)]
-			public INTERNAL_GameControllerButtonBind_hat hat;
+			public INTERNAL_GameControllerButtonBind_union value;
+		}
+
+		/* This exists to deal with C# being stupid about blittable types. */
+		[StructLayout(LayoutKind.Sequential)]
+		private struct INTERNAL_SDL_GameControllerButtonBind
+		{
+			public int bindType;
+			/* Largest data type in the union is two ints in size */
+			public int unionVal0;
+			public int unionVal1;
 		}
 
 		[DllImport(nativeLibName, EntryPoint = "SDL_GameControllerAddMapping", CallingConvention = CallingConvention.Cdecl)]
@@ -5380,11 +5496,26 @@ namespace SDL2
 		}
 
 		/* gamecontroller refers to an SDL_GameController* */
-		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern SDL_GameControllerButtonBind SDL_GameControllerGetBindForAxis(
+		[DllImport(nativeLibName, EntryPoint = "SDL_GameControllerGetBindForAxis", CallingConvention = CallingConvention.Cdecl)]
+		private static extern INTERNAL_SDL_GameControllerButtonBind INTERNAL_SDL_GameControllerGetBindForAxis(
 			IntPtr gamecontroller,
 			SDL_GameControllerAxis axis
 		);
+		public static SDL_GameControllerButtonBind SDL_GameControllerGetBindForAxis(
+			IntPtr gamecontroller,
+			SDL_GameControllerAxis axis
+		) {
+			// This is guaranteed to never be null
+			INTERNAL_SDL_GameControllerButtonBind dumb = INTERNAL_SDL_GameControllerGetBindForAxis(
+				gamecontroller,
+				axis
+			);
+			SDL_GameControllerButtonBind result = new SDL_GameControllerButtonBind();
+			result.bindType = (SDL_GameControllerBindType) dumb.bindType;
+			result.value.hat.hat = dumb.unionVal0;
+			result.value.hat.hat_mask = dumb.unionVal1;
+			return result;
+		}
 
 		/* gamecontroller refers to an SDL_GameController* */
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
@@ -5418,11 +5549,26 @@ namespace SDL2
 		}
 
 		/* gamecontroller refers to an SDL_GameController* */
-		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern SDL_GameControllerButtonBind SDL_GameControllerGetBindForButton(
+		[DllImport(nativeLibName, EntryPoint = "SDL_GameControllerGetBindForButton", CallingConvention = CallingConvention.Cdecl)]
+		private static extern INTERNAL_SDL_GameControllerButtonBind INTERNAL_SDL_GameControllerGetBindForButton(
 			IntPtr gamecontroller,
 			SDL_GameControllerButton button
 		);
+		public static SDL_GameControllerButtonBind SDL_GameControllerGetBindForButton(
+			IntPtr gamecontroller,
+			SDL_GameControllerButton button
+		) {
+			// This is guaranteed to never be null
+			INTERNAL_SDL_GameControllerButtonBind dumb = INTERNAL_SDL_GameControllerGetBindForButton(
+				gamecontroller,
+				button
+			);
+			SDL_GameControllerButtonBind result = new SDL_GameControllerButtonBind();
+			result.bindType = (SDL_GameControllerBindType) dumb.bindType;
+			result.value.hat.hat = dumb.unionVal0;
+			result.value.hat.hat_mask = dumb.unionVal1;
+			return result;
+		}
 
 		/* gamecontroller refers to an SDL_GameController* */
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
@@ -5885,10 +6031,6 @@ namespace SDL2
 			int len
 		);
 
-		/* dev refers to an SDL_AudioDeviceID */
-		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern int SDL_AudioDeviceConnected(uint dev);
-
 		[DllImport(nativeLibName, EntryPoint = "SDL_AudioInit", CallingConvention = CallingConvention.Cdecl)]
 		private static extern int INTERNAL_SDL_AudioInit(
 			byte[] driver_name
@@ -6187,6 +6329,7 @@ namespace SDL2
 		public static extern UInt64 SDL_GetPerformanceFrequency();
 
 		/* param refers to a void* */
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 		public delegate UInt32 SDL_TimerCallback(UInt32 interval, IntPtr param);
 
 		/* int refers to an SDL_TimerID, param to a void* */

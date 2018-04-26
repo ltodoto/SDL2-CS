@@ -50,7 +50,7 @@ namespace SDL2
 		 */
 		public const int SDL_IMAGE_MAJOR_VERSION =	2;
 		public const int SDL_IMAGE_MINOR_VERSION =	0;
-		public const int SDL_IMAGE_PATCHLEVEL =		0;
+		public const int SDL_IMAGE_PATCHLEVEL =		2;
 
 		[Flags]
 		public enum IMG_InitFlags
@@ -68,12 +68,12 @@ namespace SDL2
 			X.patch = SDL_IMAGE_PATCHLEVEL;
 		}
 
-		[DllImport(nativeLibName, EntryPoint = "IMG_LinkedVersion", CallingConvention = CallingConvention.Cdecl)]
-		private static extern IntPtr INTERNAL_IMG_LinkedVersion();
-		public static SDL.SDL_version IMG_LinkedVersion()
+		[DllImport(nativeLibName, EntryPoint = "IMG_Linked_Version", CallingConvention = CallingConvention.Cdecl)]
+		private static extern IntPtr INTERNAL_IMG_Linked_Version();
+		public static SDL.SDL_version IMG_Linked_Version()
 		{
 			SDL.SDL_version result;
-			IntPtr result_ptr = INTERNAL_IMG_LinkedVersion();
+			IntPtr result_ptr = INTERNAL_IMG_Linked_Version();
 			result = (SDL.SDL_version) Marshal.PtrToStructure(
 				result_ptr,
 				typeof(SDL.SDL_version)
@@ -179,9 +179,6 @@ namespace SDL2
 			);
 		}
 
-		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
-		public static extern int IMG_InvertAlpha(int on);
-
 		/* IntPtr refers to an SDL_Surface* */
 		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
 		public static extern IntPtr IMG_ReadXPMFromArray(
@@ -210,6 +207,32 @@ namespace SDL2
 			IntPtr surface,
 			IntPtr dst,
 			int freedst
+		);
+
+		/* surface refers to an SDL_Surface* */
+		[DllImport(nativeLibName, EntryPoint = "IMG_SaveJPG", CallingConvention = CallingConvention.Cdecl)]
+		private static extern int INTERNAL_IMG_SaveJPG(
+			IntPtr surface,
+			byte[] file,
+			int quality
+		);
+		public static int IMG_SaveJPG(IntPtr surface, string file, int quality)
+		{
+			return INTERNAL_IMG_SaveJPG(
+				surface,
+				SDL.UTF8_ToNative(file),
+				quality
+			);
+		}
+
+		/* surface refers to an SDL_Surface*, dst to an SDL_RWops* */
+		/* THIS IS A PUBLIC RWops FUNCTION! */
+		[DllImport(nativeLibName, CallingConvention = CallingConvention.Cdecl)]
+		public static extern int IMG_SaveJPG_RW(
+			IntPtr surface,
+			IntPtr dst,
+			int freedst,
+			int quality
 		);
 
 		#endregion
